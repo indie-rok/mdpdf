@@ -37,7 +37,7 @@ function getAllStyles(options) {
     cssStyleSheets.push(join(__dirname, '/assets/github-markdown-css.css'));
   }
   // Highlight CSS
-  cssStyleSheets.push(join(__dirname, '/assets/highlight/styles/github.css'));
+  // cssStyleSheets.push(join(__dirname, '/assets/highlight/styles/github.css'));
 
   // Some additional defaults such as margins
   if (options.defaultStyle) {
