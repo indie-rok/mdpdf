@@ -2,7 +2,7 @@ import {
   readFile as _readFile,
   writeFile as _writeFile,
   copyFileSync,
-  unlinkSync
+  unlinkSync,
 } from 'fs';
 import { join, dirname, resolve } from 'path';
 import { promisify } from 'util';
@@ -17,6 +17,7 @@ const { SafeString, compile } = handlebars;
 import { allowUnsafeNewFunction } from 'loophole';
 import { getStyles, getStyleBlock, qualifyImgSources } from './utils.js';
 import { getOptions } from './puppeteer-helper.js';
+import chromium from 'chrome-aws-lambda';
 
 const readFile = promisify(_readFile);
 const writeFile = promisify(_writeFile);
@@ -37,7 +38,7 @@ function getAllStyles(options) {
     cssStyleSheets.push(join(__dirname, '/assets/github-markdown-css.css'));
   }
   // Highlight CSS
-  // cssStyleSheets.push(join(__dirname, '/assets/highlight/styles/github.css'));
+  cssStyleSheets.push(join(__dirname, '/assets/highlight/styles/github.css'));
 
   // Some additional defaults such as margins
   if (options.defaultStyle) {
@@ -55,15 +56,20 @@ function getAllStyles(options) {
   };
 }
 
-function parseMarkdownToHtml(markdown, convertEmojis, enableHighlight, simpleLineBreaks) {
+function parseMarkdownToHtml(
+  markdown,
+  convertEmojis,
+  enableHighlight,
+  simpleLineBreaks
+) {
   setFlavor('github');
   const options = {
     prefixHeaderId: false,
     ghCompatibleHeaderId: true,
     simpleLineBreaks,
-    extensions: []
+    extensions: [],
   };
-  
+
   // Sometimes emojis can mess with time representations
   // such as "00:00:00"
   if (convertEmojis) {
@@ -71,7 +77,7 @@ function parseMarkdownToHtml(markdown, convertEmojis, enableHighlight, simpleLin
   }
 
   if (enableHighlight) {
-    options.extensions.push(showdownHighlight)
+    options.extensions.push(showdownHighlight);
   }
 
   const converter = new Converter(options);
@@ -98,19 +104,24 @@ export async function convert(options) {
   };
 
   let source, template;
-  
+
   // Asynchronously convert
   const promises = [
-    template = readFile(layoutPath, 'utf8').then(compile),
-    source = readFile(options.source, 'utf8'),
-    prepareHeader(options, styles.styles).then(v => options.header = v),
-    prepareFooter(options).then(v => options.footer = v),
+    (template = readFile(layoutPath, 'utf8').then(compile)),
+    (source = readFile(options.source, 'utf8')),
+    prepareHeader(options, styles.styles).then((v) => (options.header = v)),
+    prepareFooter(options).then((v) => (options.footer = v)),
   ];
 
   const emojis = !options.noEmoji;
   const syntaxHighlighting = !options.noHighlight;
   const simpleLineBreaks = !options.ghStyle;
-  let content = parseMarkdownToHtml(await source, emojis, syntaxHighlighting, simpleLineBreaks);
+  let content = parseMarkdownToHtml(
+    await source,
+    emojis,
+    syntaxHighlighting,
+    simpleLineBreaks
+  );
 
   // This step awaits so options is valid
   await Promise.all(promises);
@@ -172,17 +183,27 @@ function createPdf(html, options) {
   let browser;
   let page;
 
-  const tempHtmlPath = resolve(
-    dirname(options.destination),
-    '_temp.html'
-  );
+  const tempHtmlPath = resolve(dirname(options.destination), '_temp.html');
 
   return writeFile(tempHtmlPath, html)
     .then(async () => {
-      const browser = await launch({ headless: 'new' , args: ['--no-sandbox', '--disable-setuid-sandbox'] })
-      
+      const browser = await launch({
+        headless: 'new',
+        args: [
+          ...chromium.args,
+          '--hide-scrollbars',
+          '--disable-web-security',
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+        ],
+        defaultViewport: chromium.defaultViewport,
+        executablePath: await chromium.executablePath,
+      });
+
       const page = (await browser.pages())[0];
-      await page.goto('file:' + tempHtmlPath, { waitUntil: options.waitUntil ?? 'networkidle0' });
+      await page.goto('file:' + tempHtmlPath, {
+        waitUntil: options.waitUntil ?? 'networkidle0',
+      });
       const puppetOptions = getOptions(options);
 
       await page.pdf(puppetOptions);
